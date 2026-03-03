@@ -5,16 +5,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Dependencias
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# Código
-COPY src/ ./src/
+# Copia el dispatcher
+COPY run.py ./run.py
 
-# Para que "src/" esté en el path
+# Copia el código
+COPY src/ ./src/
 ENV PYTHONPATH=/app/src
 
-# Ejecuta el ETL
-CMD ["python", "-m", "support_metrics.main"]
+# Entry + default task (puedes cambiarla al ejecutar)
+ENTRYPOINT ["python", "run.py"]
+CMD ["metricas_soporte"]

@@ -1,0 +1,17 @@
+[project]
+name = "jira-support-metrics"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "requests>=2.31.0",
+  "python-dotenv>=1.0.1",
+  "SQLAlchemy>=2.0.0",
+  "pg8000>=1.30.0",
+  "python-dateutil>=2.9.0.post0",
+]
+
+[project.scripts]
+jira-support-metrics = "support_metrics.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

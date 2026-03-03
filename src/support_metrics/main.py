@@ -70,6 +70,7 @@ on conflict (issue_key) do update set
   computed_at = now()
 """
 
+
 def _build_epic_exclusion_clause(settings) -> str:
     if not settings.excluded_epic_keys:
         return ""
@@ -81,6 +82,7 @@ def _build_epic_exclusion_clause(settings) -> str:
         return f" AND (parent is EMPTY OR parent not in ({keys_csv}))"
 
     return f' AND ("Epic Link" is EMPTY OR "Epic Link" not in ({keys_csv}))'
+
 
 def main():
     settings = load_settings()
@@ -109,23 +111,35 @@ def main():
     window_start = last_dt - timedelta(minutes=settings.overlap_minutes)
     epic_exclusion = _build_epic_exclusion_clause(settings)
 
+    # FIX TZ: convertir la marca de tiempo a la zona horaria local antes de formatear el JQL
+    window_start_local = window_start.astimezone(tz)
+
     jql = (
-        f'project = {settings.jira_project_key} '
-        f'AND updated >= "{window_start.strftime("%Y-%m-%d %H:%M")}"'
-        f'{epic_exclusion} '
-        f'order by updated asc'
+        f"project = {settings.jira_project_key} "
+        f'AND updated >= "{window_start_local.strftime("%Y-%m-%d %H:%M")}"'
+        f"{epic_exclusion} "
+        f"order by updated asc"
     )
 
     fields = [
-        "created", "updated", "priority", "status", "assignee", "reporter",
-        "resolutiondate", "issuetype", "project"
+        "created",
+        "updated",
+        "priority",
+        "status",
+        "assignee",
+        "reporter",
+        "resolutiondate",
+        "issuetype",
+        "project",
     ]
 
     next_token = None
     total = 0
 
     while True:
-        page = jira.search_issues(jql=jql, fields=fields, next_page_token=next_token, max_results=100)
+        page = jira.search_issues(
+            jql=jql, fields=fields, next_page_token=next_token, max_results=100
+        )
         issues = page.get("issues", []) or []
         if not issues:
             break
@@ -155,6 +169,7 @@ def main():
     set_state(pool_supa, STATE_KEY, now_utc.isoformat(), schema=SCHEMA)
 
     print(f"OK. Upserted {total} issues to LOCAL + SUPABASE.")
+
 
 if __name__ == "__main__":
     main()

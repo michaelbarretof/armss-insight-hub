@@ -5,9 +5,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 def _opt(name: str, default: str | None = None) -> str | None:
     v = os.getenv(name)
     return v if v not in (None, "") else default
+
 
 def _must(name: str) -> str:
     v = os.getenv(name)
@@ -15,10 +17,12 @@ def _must(name: str) -> str:
         raise RuntimeError(f"Missing env var: {name}")
     return v
 
+
 def _norm_text(s: str) -> str:
     s = s.strip().lower()
     s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
     return " ".join(s.split())
+
 
 def normalize_priority_name(name: str | None) -> tuple[str | None, str | None]:
     if not name:
@@ -39,15 +43,18 @@ def normalize_priority_name(name: str | None) -> tuple[str | None, str | None]:
 
     return raw, n.replace(" ", "_")
 
+
 def _csv_set(s: str | None) -> set[str]:
     if not s:
         return set()
     return {x.strip() for x in s.split(",") if x.strip()}
 
+
 def _to_bool(s: str | None, default: bool = False) -> bool:
     if s is None:
         return default
     return s.strip().lower() in {"1", "true", "yes", "y", "on"}
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -81,10 +88,13 @@ class Settings:
     overlap_minutes: int
     initial_lookback_hours: int
 
-    # Business time
+    # Business time (para cálculos)
     tz: str
     business_start: str
     business_end: str
+
+    # JQL timezone (para búsqueda incremental en Jira)
+    jql_tz: str
 
     # Workflow
     status_todo: str
@@ -102,13 +112,34 @@ class Settings:
     # SLA por prioridad_norm -> {first, resolve, calendar}
     sla: dict
 
+
 def load_settings() -> Settings:
     sla = {
-        "mas_alto": {"first": int(os.getenv("SLA_MAS_ALTO_FIRST_MIN", "1")), "resolve": int(os.getenv("SLA_MAS_ALTO_RESOLVE_MIN", "120")), "calendar": True},
-        "alta": {"first": int(os.getenv("SLA_ALTA_FIRST_MIN", "15")), "resolve": int(os.getenv("SLA_ALTA_RESOLVE_MIN", "480")), "calendar": True},
-        "media": {"first": int(os.getenv("SLA_MEDIA_FIRST_MIN", "60")), "resolve": int(os.getenv("SLA_MEDIA_RESOLVE_MIN", "1200")), "calendar": False},
-        "baja": {"first": int(os.getenv("SLA_BAJA_FIRST_MIN", "60")), "resolve": int(os.getenv("SLA_BAJA_RESOLVE_MIN", "1800")), "calendar": False},
-        "mas_baja": {"first": int(os.getenv("SLA_MAS_BAJA_FIRST_MIN", "60")), "resolve": int(os.getenv("SLA_MAS_BAJA_RESOLVE_MIN", "1800")), "calendar": False},
+        "mas_alto": {
+            "first": int(os.getenv("SLA_MAS_ALTO_FIRST_MIN", "1")),
+            "resolve": int(os.getenv("SLA_MAS_ALTO_RESOLVE_MIN", "120")),
+            "calendar": True,
+        },
+        "alta": {
+            "first": int(os.getenv("SLA_ALTA_FIRST_MIN", "15")),
+            "resolve": int(os.getenv("SLA_ALTA_RESOLVE_MIN", "480")),
+            "calendar": True,
+        },
+        "media": {
+            "first": int(os.getenv("SLA_MEDIA_FIRST_MIN", "60")),
+            "resolve": int(os.getenv("SLA_MEDIA_RESOLVE_MIN", "1200")),
+            "calendar": False,
+        },
+        "baja": {
+            "first": int(os.getenv("SLA_BAJA_FIRST_MIN", "60")),
+            "resolve": int(os.getenv("SLA_BAJA_RESOLVE_MIN", "1800")),
+            "calendar": False,
+        },
+        "mas_baja": {
+            "first": int(os.getenv("SLA_MAS_BAJA_FIRST_MIN", "60")),
+            "resolve": int(os.getenv("SLA_MAS_BAJA_RESOLVE_MIN", "1800")),
+            "calendar": False,
+        },
     }
 
     support_ids = _csv_set(_must("SUPPORT_ACCOUNT_IDS"))
@@ -117,6 +148,9 @@ def load_settings() -> Settings:
     epic_mode = (_opt("EPIC_FIELD_MODE", "epic_link") or "epic_link").strip().lower()
     if epic_mode not in {"epic_link", "parent"}:
         raise RuntimeError("EPIC_FIELD_MODE must be 'epic_link' or 'parent'")
+
+    tz = _opt("TZ", "America/Bogota") or "America/Bogota"
+    jql_tz = (_opt("JQL_TZ", tz) or tz).strip()
 
     return Settings(
         jira_server=_must("JIRA_SERVER").rstrip("/"),
@@ -145,9 +179,11 @@ def load_settings() -> Settings:
         overlap_minutes=int(_opt("OVERLAP_MINUTES", "5")),
         initial_lookback_hours=int(_opt("INITIAL_LOOKBACK_HOURS", "24")),
 
-        tz=_opt("TZ", "America/Bogota"),
+        tz=tz,
         business_start=_opt("BUSINESS_START", "08:00"),
         business_end=_opt("BUSINESS_END", "18:00"),
+
+        jql_tz=jql_tz,
 
         status_todo=_opt("STATUS_TODO", "TO DO (ACCS)"),
         status_in_progress=_opt("STATUS_IN_PROGRESS", "IN PROGRESS (ACCS)"),

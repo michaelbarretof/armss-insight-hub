@@ -19,55 +19,55 @@ SCHEMA = "armss"
 
 UPSERT_SQL = f"""
 insert into {SCHEMA}.jira_issue_facts (
-  issue_key, issue_id, project_key,
-  issue_type, priority_name, priority_norm,
-  created_at, updated_at, current_status,
-  assignee_account_id, reporter_account_id,
-  first_comment_at, first_response_minutes,
-  resolution_at, resolution_minutes,
-  todo_minutes, in_progress_minutes,
-  is_final, final_status, escalated,
-  sla_first_response_target_min, sla_resolution_target_min,
-  sla_first_response_met, sla_resolution_met,
-  computed_at
+issue_key, issue_id, project_key,
+issue_type, priority_name, priority_norm,
+created_at, updated_at, current_status,
+assignee_account_id, reporter_account_id,
+first_comment_at, first_response_minutes,
+resolution_at, resolution_minutes,
+todo_minutes, in_progress_minutes,
+is_final, final_status, escalated,
+sla_first_response_target_min, sla_resolution_target_min,
+sla_first_response_met, sla_resolution_met,
+computed_at
 ) values (
-  :issue_key, :issue_id, :project_key,
-  :issue_type, :priority_name, :priority_norm,
-  :created_at, :updated_at, :current_status,
-  :assignee_account_id, :reporter_account_id,
-  :first_comment_at, :first_response_minutes,
-  :resolution_at, :resolution_minutes,
-  :todo_minutes, :in_progress_minutes,
-  :is_final, :final_status, :escalated,
-  :sla_first_response_target_min, :sla_resolution_target_min,
-  :sla_first_response_met, :sla_resolution_met,
-  now()
+:issue_key, :issue_id, :project_key,
+:issue_type, :priority_name, :priority_norm,
+:created_at, :updated_at, :current_status,
+:assignee_account_id, :reporter_account_id,
+:first_comment_at, :first_response_minutes,
+:resolution_at, :resolution_minutes,
+:todo_minutes, :in_progress_minutes,
+:is_final, :final_status, :escalated,
+:sla_first_response_target_min, :sla_resolution_target_min,
+:sla_first_response_met, :sla_resolution_met,
+now()
 )
 on conflict (issue_key) do update set
-  issue_id = excluded.issue_id,
-  project_key = excluded.project_key,
-  issue_type = excluded.issue_type,
-  priority_name = excluded.priority_name,
-  priority_norm = excluded.priority_norm,
-  created_at = excluded.created_at,
-  updated_at = excluded.updated_at,
-  current_status = excluded.current_status,
-  assignee_account_id = excluded.assignee_account_id,
-  reporter_account_id = excluded.reporter_account_id,
-  first_comment_at = excluded.first_comment_at,
-  first_response_minutes = excluded.first_response_minutes,
-  resolution_at = excluded.resolution_at,
-  resolution_minutes = excluded.resolution_minutes,
-  todo_minutes = excluded.todo_minutes,
-  in_progress_minutes = excluded.in_progress_minutes,
-  is_final = excluded.is_final,
-  final_status = excluded.final_status,
-  escalated = excluded.escalated,
-  sla_first_response_target_min = excluded.sla_first_response_target_min,
-  sla_resolution_target_min = excluded.sla_resolution_target_min,
-  sla_first_response_met = excluded.sla_first_response_met,
-  sla_resolution_met = excluded.sla_resolution_met,
-  computed_at = now()
+issue_id = excluded.issue_id,
+project_key = excluded.project_key,
+issue_type = excluded.issue_type,
+priority_name = excluded.priority_name,
+priority_norm = excluded.priority_norm,
+created_at = excluded.created_at,
+updated_at = excluded.updated_at,
+current_status = excluded.current_status,
+assignee_account_id = excluded.assignee_account_id,
+reporter_account_id = excluded.reporter_account_id,
+first_comment_at = excluded.first_comment_at,
+first_response_minutes = excluded.first_response_minutes,
+resolution_at = excluded.resolution_at,
+resolution_minutes = excluded.resolution_minutes,
+todo_minutes = excluded.todo_minutes,
+in_progress_minutes = excluded.in_progress_minutes,
+is_final = excluded.is_final,
+final_status = excluded.final_status,
+escalated = excluded.escalated,
+sla_first_response_target_min = excluded.sla_first_response_target_min,
+sla_resolution_target_min = excluded.sla_resolution_target_min,
+sla_first_response_met = excluded.sla_first_response_met,
+sla_resolution_met = excluded.sla_resolution_met,
+computed_at = now()
 """
 
 
@@ -87,7 +87,12 @@ def _build_epic_exclusion_clause(settings) -> str:
 def main():
     settings = load_settings()
 
+    # TZ para cálculos (BusinessCalendar)
     tz = ZoneInfo(settings.tz)
+
+    # TZ para el JQL (búsqueda incremental)
+    jql_tz = ZoneInfo(settings.jql_tz)
+
     cal = BusinessCalendar(
         tz=tz,
         start=parse_hhmm(settings.business_start),
@@ -111,8 +116,8 @@ def main():
     window_start = last_dt - timedelta(minutes=settings.overlap_minutes)
     epic_exclusion = _build_epic_exclusion_clause(settings)
 
-    # FIX TZ: convertir la marca de tiempo a la zona horaria local antes de formatear el JQL
-    window_start_local = window_start.astimezone(tz)
+    # FIX TZ: usar la zona horaria correcta para que Jira interprete el JQL
+    window_start_local = window_start.astimezone(jql_tz)
 
     jql = (
         f"project = {settings.jira_project_key} "
@@ -153,9 +158,7 @@ def main():
             facts = compute_issue_facts(full, jira, cal, settings)
             params = facts.__dict__
 
-            # 1) UPSERT en Postgres local
             exe_non_query(UPSERT_SQL, pool_local, params)
-            # 2) UPSERT en Supabase
             exe_non_query(UPSERT_SQL, pool_supa, params)
 
             total += 1
@@ -164,7 +167,6 @@ def main():
         if not next_token:
             break
 
-    # Solo avanzamos el puntero si ambas escrituras terminaron bien
     set_state(pool_local, STATE_KEY, now_utc.isoformat(), schema=SCHEMA)
     set_state(pool_supa, STATE_KEY, now_utc.isoformat(), schema=SCHEMA)
 
